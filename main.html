@@ -2,7 +2,7 @@
 <html>
 <body>
 
-<canvas id="myCanvas" width="200" height="100"
+<canvas id="myCanvas" width="400" height="400"
 style="border:1px solid #c3c3c3;">
 Your browser does not support the canvas element.
 </canvas>
@@ -18,20 +18,187 @@ class Point2 {
     this.y = y;
   }
   
-  draw(context) {
-  	context.fillStyle = "#FF0000";
-	context.fillRect(this.x, this.y, 2, 2);
+  draw(context, color) {
+  	if (color)
+  		context.fillStyle = color;
+    else
+    	context.fillStyle = "#00FF00";
+    
+    var scale = 4.0;
+	  context.fillRect((scale+1)*this.x, (scale+1)*this.y, scale, scale);
+  }
+  
+  isColliding(point) {
+  	return this.x == point.x && this.y == point.y;
+  }
+  
+  distance(point) {
+  	return Math.sqrt((this.x - point.x)*(this.x - point.x) + (this.y - point.y)*(this.y - point.y));
+  }
+
+  print(name) {
+    if (name)
+      console.log(`Point coordinates [${name}]: (${this.x}, ${this.y})`);
+    else  
+      console.log(`Point coordinates: (${this.x}, ${this.y})`);
+  }
+
+  left() {
+    return new Point2(this.y, -this.x);
+  }
+
+  right() {
+    return new Point2(-this.y, this.x);
+  }
+
+  add(point) {
+    return new Point2(this.x + point.x, this.y + point.y);
+  }
+
+  sub(point) {
+    return new Point2(this.x - point.x, this.y - point.y);
   }
 }
 
+class Object {
+	points = []
+    
+  constructor(color) {
+    this.color = color;
+  }
+  
+  add(point) {
+    this.points.push(point)
+  }
+  
+  draw(context) {
+    for (var i=0; i<this.points.length; i++)
+        this.points[i].draw(context, this.color);
+  }
+  
+  isColliding(point, radius) {
+    if (!radius) {
+      for (var i=0; i<this.points.length; i++) {
+        if (this.points[i].isColliding(point))
+            return true;
+      }
+    } else {
+      for (var x=-radius; x<=radius; x++) {
+        for (var y=-radius; y<=radius; y++) {
+          var p = new Point2(point.x + x, point.y + y);
+
+          for (var i=0; i<this.points.length; i++) {
+            if (this.points[i].isColliding(p))
+              return true;
+          }
+
+        }
+      }
+    }
+
+    return false;
+  }
+  
+  last() {
+    return this.points[this.points.length-1];
+  }
+
+  direction() {
+    if (this.points.length < 2)
+      return null;
+
+    var _last = this.last();
+    var _pLast = this.points[this.points.length-2];
+
+    return _last.sub(_pLast);
+  }
+}
+
+var obstacle = new Object("#FF0000");
+for (var i=0;i<25; i++)
+  obstacle.add(new Point2(20, 5 + i));
+
+obstacle.add(new Point2(20, 30));
+obstacle.add(new Point2(19, 30));
+obstacle.add(new Point2(18, 30));
+obstacle.add(new Point2(17, 30));
+obstacle.add(new Point2(17, 29));
+obstacle.add(new Point2(17, 28));
+obstacle.add(new Point2(17, 27));
+obstacle.draw(ctx);
 
 var start = new Point2(10, 10);
 start.draw(ctx);
 
-var end = new Point2(100, 50);
+var end = new Point2(50, 25);
 end.draw(ctx);
+
+var colliding = false;
+
+var path = new Object("#00FF00");
+path.add(start);
+
+var steps = 0;
+
+var dirs = [];
+//dirs.push(new Point2(-1, -1));
+//dirs.push(new Point2( 1, -1));
+//dirs.push(new Point2(-1,  1));
+//dirs.push(new Point2( 1,  1));
+dirs.push(new Point2(-1, 0));
+dirs.push(new Point2( 1, 0));
+dirs.push(new Point2( 0,-1));
+dirs.push(new Point2( 0, 1));
+
+while (!colliding && steps < 1000) {
+  var lastPoint = path.last();
+
+  // 1. select the next point with shortest distance
+  var minDist = 1000;
+  var nextPoint = null;
+
+  for (var i=0; i<dirs.length; i++) {
+    var np = new Point2(lastPoint.x + dirs[i].x, lastPoint.y + dirs[i].y);
+    var dist = np.distance(end);
+      
+    if (dist < minDist && !obstacle.isColliding(np) && !path.isColliding(np)) {
+      nextPoint = np;
+      minDist = dist;
+    }
+  }
+
+  // go along obstacle
+  var pathDirection = path.direction();
+  if (pathDirection && obstacle.isColliding(lastPoint, 1)) {
+    pathDirection.print("path");
+
+    var left = pathDirection.left();
+    var right = pathDirection.right();
+
+    left.print("left");
+    right.print("right");
+
+    // current point left hand side
+    var leftLast = lastPoint.add(left);
+    if (!obstacle.isColliding(leftLast)) {
+      nextPoint = leftLast;
+    }
+  }
+
+  if (nextPoint) {
+    path.add(nextPoint);
+  }
+
+  if (path.last().isColliding(end)) {
+    colliding = true;
+  }
+
+  steps ++;
+  path.draw(ctx);
+}
 
 </script>
 
 </body>
 </html>
+

@@ -13,18 +13,23 @@ var canvas = document.getElementById("myCanvas");
 var ctx = canvas.getContext("2d");
 
 class Point2 {
-  constructor(x, y) {
+  constructor(x, y, color) {
     this.x = x;
     this.y = y;
+    this.gCost = 0;
+    this.hCost = 0;
+    this.fCost = 0;
+    this.parent = null;
+    this.color = color ? color : "#FF8888";
   }
   
   draw(context, color) {
   	if (color)
   		context.fillStyle = color;
     else
-    	context.fillStyle = "#00FF00";
+    	context.fillStyle = this.color;
     
-    var scale = 4.0;
+    var scale = 6.0;
 	  context.fillRect((scale+1)*this.x, (scale+1)*this.y, scale, scale);
   }
   
@@ -58,6 +63,26 @@ class Point2 {
   sub(point) {
     return new Point2(this.x - point.x, this.y - point.y);
   }
+
+  neighbours(start, end, obstacle) {
+    var neighbours = [];
+    var moves = [new Point2(-1, 0), new Point2(0, -1), new Point2(1, 0), new Point2(0, 1)];
+    var cost = 1;
+
+    for (var i=0; i<moves.length; i++) {
+      var p = new Point2(this.x + moves[i].x, this.y + moves[i].y, "#8888FF");
+  
+      if (!obstacle.isColliding(p)) {
+        p.gCost = this.gCost + cost
+        p.hCost = Math.sqrt((end.x - p.x)*(end.x - p.x) + (end.y - p.y)*(end.y - p.y));
+        p.fCost = p.gCost + p.hCost
+        p.parent = this;
+        neighbours.push(p);
+      }
+    }
+
+    return neighbours;
+  }
 }
 
 class Object {
@@ -76,27 +101,49 @@ class Object {
         this.points[i].draw(context, this.color);
   }
   
+  isObject2ObjectCollision(object) {
+    for (var j=0; j<this.points.length; j++) {
+      if (object.isColliding(this.points[j])) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  copy(object) {
+    this.points = [];
+    for (var i=0; i<object.points.length; i++) {
+      this.points.push(new Point2(object.points[i].x, object.points[i].y));
+    }
+  }
+
   isColliding(point, radius) {
     if (!radius) {
-      for (var i=0; i<this.points.length; i++) {
-        if (this.points[i].isColliding(point))
-            return true;
-      }
-    } else {
+      radius = 0;
+    }
+
+    for (var i=0; i<this.points.length; i++) {
       for (var x=-radius; x<=radius; x++) {
         for (var y=-radius; y<=radius; y++) {
           var p = new Point2(point.x + x, point.y + y);
 
-          for (var i=0; i<this.points.length; i++) {
-            if (this.points[i].isColliding(p))
-              return true;
-          }
-
+          if (this.points[i].isColliding(p))
+            return true;
         }
       }
     }
-
+    
     return false;
+  }
+
+  isBlocked(point) {
+    var p1 = new Point2(point.x + 1, point.y);
+    var p2 = new Point2(point.x, point.y + 1);
+    var p3 = new Point2(point.x - 1, point.y);
+    var p4 = new Point2(point.x, point.y-1);
+
+    return this.isColliding(p1) && this.isColliding(p2) && this.isColliding(p3) && this.isColliding(p4);
   }
   
   last() {
@@ -112,9 +159,38 @@ class Object {
 
     return _last.sub(_pLast);
   }
+
+  createLine(pA, pB) {
+    this.points = [];
+
+    var dx = (pB.x - pA.x);
+    var dy = (pB.y - pA.y);
+
+    var x = pA.x;
+    var y = pA.y;
+    var s = 0;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      s = Math.abs(dx);
+    } else {
+      s = Math.abs(dy);
+    }
+
+    dy = dy / s;
+    dx = dx / s;
+
+    for (var i = 0; i < s; i++) {
+      var p = new Point2(Math.floor(x), Math.floor(y));
+      this.points.push(p);
+
+      x += dx;
+      y += dy;
+    }
+  }
 }
 
-var obstacle = new Object("#FF0000");
+
+var obstacle = new Object("#000000");
 for (var i=0;i<25; i++)
   obstacle.add(new Point2(20, 5 + i));
 
@@ -125,77 +201,191 @@ obstacle.add(new Point2(17, 30));
 obstacle.add(new Point2(17, 29));
 obstacle.add(new Point2(17, 28));
 obstacle.add(new Point2(17, 27));
+obstacle.add(new Point2(16, 30));
+obstacle.add(new Point2(16, 30));
+obstacle.add(new Point2(16, 30));
+obstacle.add(new Point2(16, 30));
+obstacle.add(new Point2(16, 29));
+obstacle.add(new Point2(16, 28));
+obstacle.add(new Point2(16, 27));
+obstacle.add(new Point2(15, 30));
+obstacle.add(new Point2(14, 30));
+obstacle.add(new Point2(13, 30));
+obstacle.add(new Point2(12, 30));
+obstacle.add(new Point2(11, 29));
+obstacle.add(new Point2(10, 28));
+obstacle.add(new Point2(9, 27));
+
 obstacle.draw(ctx);
 
-var start = new Point2(10, 10);
+var obstacleInitial = new Object();
+obstacleInitial.copy(obstacle);
+
+var start = new Point2(10, 10, "#00FF00");
+var end = new Point2(50, 15, "#FF0000");
 start.draw(ctx);
 
-var end = new Point2(50, 25);
 end.draw(ctx);
 
 var colliding = false;
 
 var path = new Object("#00FF00");
 path.add(start);
+obstacle.add(start);
 
 var steps = 0;
 
 var dirs = [];
-//dirs.push(new Point2(-1, -1));
-//dirs.push(new Point2( 1, -1));
-//dirs.push(new Point2(-1,  1));
-//dirs.push(new Point2( 1,  1));
+// dirs.push(new Point2(-1, -1));
+// dirs.push(new Point2( 1, -1));
+// dirs.push(new Point2(-1,  1));
+// dirs.push(new Point2( 1,  1));
 dirs.push(new Point2(-1, 0));
 dirs.push(new Point2( 1, 0));
 dirs.push(new Point2( 0,-1));
 dirs.push(new Point2( 0, 1));
 
-while (!colliding && steps < 1000) {
-  var lastPoint = path.last();
+// while (!colliding && steps < 10000) {
+//   var lastPoint = path.last();
 
-  // 1. select the next point with shortest distance
-  var minDist = 1000;
-  var nextPoint = null;
+//   // 1. select the next point with shortest distance
+//   var minDist = 1000;
+//   var nextPoint = null;
 
-  for (var i=0; i<dirs.length; i++) {
-    var np = new Point2(lastPoint.x + dirs[i].x, lastPoint.y + dirs[i].y);
-    var dist = np.distance(end);
+//   for (var i=0; i<dirs.length; i++) {
+//     var np = new Point2(lastPoint.x + dirs[i].x, lastPoint.y + dirs[i].y);
+//     var d = np.distance(end);
       
-    if (dist < minDist && !obstacle.isColliding(np) && !path.isColliding(np)) {
-      nextPoint = np;
-      minDist = dist;
+//     if (d < minDist && !obstacle.isColliding(np) && !obstacle.isBlocked(np)) {
+//       nextPoint = np;
+//       minDist = d;
+//     }
+//   }
+
+//   // go along obstacle
+//   // var pathDirection = path.direction();
+//   // if (pathDirection && obstacle.isColliding(lastPoint, 1)) {
+//   //   pathDirection.print("path");
+
+//   //   var left = pathDirection.left();
+//   //   var right = pathDirection.right();
+
+//   //   left.print("left");
+//   //   right.print("right");
+
+//   //   // current point left hand side
+//   //   var leftLast = lastPoint.add(left);
+//   //   if (!obstacle.isColliding(leftLast) && !path.isColliding(leftLast)) {
+//   //     nextPoint = leftLast;
+//   //   }
+//   //   var rightLast = lastPoint.add(right);
+//   //   if (!obstacle.isColliding(rightLast) && !path.isColliding(rightLast)) {
+//   //     nextPoint = rightLast;
+//   //   }
+//   // }
+
+//   if (nextPoint) {
+//     path.add(nextPoint);
+//     obstacle.add(nextPoint);
+//   }
+
+//   if (path.last().isColliding(end)) {
+//     colliding = true;
+//   }
+
+//   steps ++;
+//   path.draw(ctx);
+// }
+
+
+var visited = new Object();
+var toVisit = new Object();
+
+toVisit.add(start);
+
+var steps = 0, maxSteps = 1000;
+
+while(toVisit.points.length > 0 && steps < maxSteps) {
+  
+  // find the next point with lowest fCost
+  var currentPoint = null;
+  var fCost = 10000;
+  var idx = -1;
+  for (var i=0; i<toVisit.points.length; i++) {
+    var nextPoint = toVisit.points[i];
+
+    if (nextPoint.fCost < fCost) {
+      fCost = nextPoint.fCost;
+      currentPoint = nextPoint;
+      idx = i;
     }
   }
 
-  // go along obstacle
-  var pathDirection = path.direction();
-  if (pathDirection && obstacle.isColliding(lastPoint, 1)) {
-    pathDirection.print("path");
+  // remove 
+  toVisit.points.splice(idx, 1);
+  visited.add(currentPoint);
 
-    var left = pathDirection.left();
-    var right = pathDirection.right();
-
-    left.print("left");
-    right.print("right");
-
-    // current point left hand side
-    var leftLast = lastPoint.add(left);
-    if (!obstacle.isColliding(leftLast)) {
-      nextPoint = leftLast;
+  if (currentPoint.isColliding(end)) {
+    console.log("We've hit the target!");
+    var p = currentPoint.parent;
+    while (p) {
+      p.draw(ctx, "#00FF00");
+      p = p.parent;
     }
+    break;
   }
 
-  if (nextPoint) {
-    path.add(nextPoint);
-  }
+  var n = currentPoint.neighbours(start, end, obstacle);
+  console.log(`Neighbours: ${n.length}`);
 
-  if (path.last().isColliding(end)) {
-    colliding = true;
+  for (var i=0; i<n.length; i++) {
+    n[i].draw(ctx);
+
+    if (visited.isColliding(n[i]) || toVisit.isColliding(n[i]))
+      continue;
+
+    toVisit.add(n[i]);
   }
 
   steps ++;
-  path.draw(ctx);
 }
+
+
+// optimize paths segments
+// var line = new Object("#0000FF");
+// line.createLine(new Point2(10, 10), new Point2(40, 20));
+// line.draw(ctx);
+
+// // line.createLine(new Point2(10, 10), new Point2(13, 40));
+// // line.draw(ctx);
+
+// // line.createLine(new Point2(10, 40), new Point2(13, 10));
+// // line.draw(ctx);
+
+// line.createLine(new Point2(40, 20), new Point2(10, 10));
+// line.draw(ctx);
+
+
+// var i = 0;
+// var segment = null;
+
+// for (var j=i+1; j<path.points.length; j++) {
+//   var _segment = new Object("#00AA00");
+//   _segment.createLine(path.points[i], path.points[j]);
+//   _segment.draw(ctx);
+
+//   //if (obstacleInitial.isObject2ObjectCollision(_segment))
+//   //  break;   
+
+//   segment = _segment;
+// }
+
+// if (segment) {
+//   segment.draw(ctx);
+//   var collision = obstacleInitial.isObject2ObjectCollision(segment);
+//   console.log(collision);
+// }
+
 
 </script>
 
